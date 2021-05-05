@@ -1,7 +1,5 @@
 #include "minishell.h"
 
-int abortar = 0;
-
 int main()
 {
     int cmd_len;
@@ -24,20 +22,7 @@ int main()
             parse_pipes(buf, cmd_len, &commands);
             processes = create_processes(commands);
 
-            if (abortar == 1)
-                write(STDOUT_FILENO, "Limite de argumentos excedido!\n", 31);
-            else
-            {
-                for (int i = 0; i < commands.cmd_cnt; i++)
-                {
-                    printf("process[%d].command = '%s'\n", i, processes[i].command);
-                    for (int j = 0; j < MAX_ARGS; j++)
-                        printf("process[%d].arg[%d] = '%s'\n", i, j, processes[i].args[j]);
-                    printf("process[%d].input_file = '%s'\n", i, processes[i].input_file);
-                    printf("process[%d].output_file = '%s'\n\n", i, processes[i].output_file);
-                }
-                printf("\n\n");
-            }
+            run_processes(processes, commands.cmd_cnt);
 
             free(processes);
             free(commands.cmds);
@@ -45,6 +30,12 @@ int main()
     }
 
     return 0;
+}
+
+void error(char *message)
+{
+    perror(message);
+    _exit(1);
 }
 
 char *trim_whitespace(char *str)
@@ -134,16 +125,14 @@ void parse_args(char command[], Process *process)
 
     token = strtok(command, " ");
     strcpy(process->command, token);
+    process->args[index] = token;
     while (token != NULL)
     {
-        if (index >= 11)
-        {
-            abortar = 1;
-            break;
-        }
+        index++;
+        if (index > MAX_ARGS + 1)
+            error("Numero maximo de argumentos excedido!");
         token = strtok(NULL, " ");
         process->args[index] = token;
-        index++;
     }
 }
 
@@ -163,7 +152,10 @@ Process *create_processes(Commands commands)
         if (i == 0)
         { // ultimo processo filho
             processes[i].pipe_in = NULL;
-            processes[i].pipe_out = &processes[i + 1];
+            if (commands.cmd_cnt != 1)
+                processes[i].pipe_out = &processes[i + 1];
+            else
+                processes[i].pipe_out = NULL;
         }
         else if (i == commands.cmd_cnt - 1)
         { // processo raiz
@@ -178,4 +170,72 @@ Process *create_processes(Commands commands)
     }
 
     return processes;
+}
+
+void execute(Process *process)
+{
+    int fd;
+
+    if (process->input_file != NULL)
+    {
+        fd = open(process->input_file, O_RDONLY);
+        dup2(fd, STDIN_FILENO);
+    }
+    if (process->output_file != NULL)
+    {
+        fd = open(process->output_file, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU);
+        dup2(fd, STDOUT_FILENO);
+    }
+    close(fd);
+
+    execve(process->command, process->args, NULL);
+}
+
+void execute_command(Process *process)
+{
+    if (process->pipe_in == NULL && process->pipe_out == NULL)
+        execute(process);
+    else
+    {
+        int pipefd[2];
+        pipe(pipefd);
+
+        pid_t child_pid = fork();
+        if (child_pid == 0)
+        { // filho
+            close(pipefd[0]);
+            dup2(pipefd[1], STDOUT_FILENO);
+            if (process->pipe_in != NULL)
+                execute_command(process->pipe_in);
+            execute(process);
+        }
+        else
+        { // pai
+            close(pipefd[1]);
+            dup2(pipefd[0], STDIN_FILENO);
+            wait(NULL);
+            if (process->pipe_out == NULL)
+                execute(process);
+        }
+    }
+}
+
+void run_processes(Process *processes, int cmd_cnt)
+{
+    // int pipefd[2];
+    // pipe(pipefd);
+
+    pid_t child_pid = fork();
+    if (child_pid == 0)
+    { // filho
+        // close(pipefd[1]);
+        // dup2(pipefd[0], STDIN_FILENO);
+        execute_command(&processes[cmd_cnt - 1]);
+    }
+    else
+    { // pai
+        // close(pipefd[0]);
+        // dup2(pipefd[1], STDOUT_FILENO);
+        wait(NULL);
+    }
 }

@@ -21,7 +21,7 @@ typedef struct Commands Commands;
 struct Process
 {
     char command[MAX_CMD_LEN];
-    char *args[MAX_ARGS];
+    char *args[MAX_ARGS + 1];
     char *input_file;
     char *output_file;
     Process *pipe_in;
@@ -34,11 +34,15 @@ struct Commands
     int cmd_cnt;
 };
 
+char *trim_whitespace(char *str);
 void parse_pipes(char command[], int cmd_len, Commands *commands);
 void parse_command(char command[], Process *process);
 char *parse_redirect(char command[], Process *process);
 void parse_args(char command[], Process *process);
 Process *create_processes(Commands commands);
-char *trim_whitespace(char *str);
+void run_processes(Process *processes, int cmd_cnt);
+void execute_command(Process *process);
+void execute(Process *process);
+void error(char *message);
 
 #endif
