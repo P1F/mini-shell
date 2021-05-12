@@ -1,2 +1,4 @@
-myshell: minishell.c
-	gcc -o minishell minishell.c
+all: main
+
+main: main.c
+	gcc -o minishell main.c
